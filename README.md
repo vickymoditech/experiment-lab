@@ -1,114 +1,297 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Experiment Lab — Operations
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS application using TypeScript, PostgreSQL, Sequelize 6, Yarn Classic, and PM2. This guide documents the setup agreed for this project; confirm the build entry path against your checkout.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Run all commands from the project root, beside `package.json`.
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Quick start
 
 ```bash
-$ yarn install
+yarn install --frozen-lockfile
+# Configure .env and ensure PostgreSQL is running first.
+yarn db:migrate
+yarn start:dev
 ```
 
-## Compile and run the project
+For a database that does not exist yet, run `yarn db:create` before migrating. The configured account needs database creation privileges.
+
+## Prerequisites
+
+- Node.js compatible with the project's dependencies (Node 24 was used during setup).
+- Yarn Classic 1.x and a running PostgreSQL server.
+- PM2 for background and cluster execution: `yarn global add pm2`.
+
+Install the database dependencies if they are not already in `package.json`:
 
 ```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+yarn add @nestjs/sequelize sequelize@6 sequelize-typescript pg pg-hstore @nestjs/config dotenv
+yarn add -D sequelize-cli@6 typescript @types/node
 ```
 
-## Run tests
+## Connection settings
+
+Create `.env` in the project root, replacing the example credentials:
+
+```dotenv
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=your_password
+DB_DATABASE=nest_app
+```
+
+Nest's `SequelizeModule.forRootAsync` reads these values through `ConfigService`, with `dialect: 'postgres'`, `autoLoadModels: true`, and `synchronize: false`. Register `Product` with `SequelizeModule.forFeature([Product])` in the module that provides the product service.
+
+The CLI uses a separate connection file, `database/config/config.cjs`:
+
+```javascript
+require("dotenv").config();
+
+module.exports = {
+  development: {
+    dialect: "postgres",
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 5432),
+    username: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    seederStorage: "sequelize",
+  },
+};
+```
+
+`development` is a CLI configuration key, not the name of the `.env` file. The scripts below select it explicitly so a shell's `NODE_ENV` cannot accidentally select a missing configuration. These scripts target the development database; add an explicit configuration and corresponding commands before using another environment.
+
+## TypeScript database files
+
+```text
+database/
+├── package.json
+├── tsconfig.json
+├── config/config.cjs
+├── migrations/       # TypeScript source; edit these files
+├── seeders/          # TypeScript source; edit these files
+└── compiled/         # Generated JavaScript; do not edit or commit
+```
+
+Create `database/package.json`:
+
+```json
+{
+  "type": "commonjs"
+}
+```
+
+Create `database/tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "rootDir": ".",
+    "outDir": "./compiled",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "types": ["node"]
+  },
+  "include": ["migrations/**/*.ts", "seeders/**/*.ts"],
+  "exclude": ["compiled", "node_modules"]
+}
+```
+
+Keep the root application compiler configuration separate. Its `include` should cover `src/**/*.ts` and `test/**/*.ts`; exclude `database`, `dist`, and `node_modules`. Preserve `experimentalDecorators: true` and `emitDecoratorMetadata: true`. If `tsconfig.build.json` overrides `exclude`, add `database` there too.
+
+Set root `.sequelizerc` to:
+
+```javascript
+const path = require("path");
+
+module.exports = {
+  config: path.resolve("database/config/config.cjs"),
+  "migrations-path": path.resolve("database/compiled/migrations"),
+  "seeders-path": path.resolve("database/compiled/seeders"),
+};
+```
+
+Add these entries to `.gitignore`:
+
+```gitignore
+.env
+database/compiled/
+```
+
+## Package scripts
+
+Merge these into the existing `scripts` object in root `package.json`. Preserve Nest's existing build, start, and test scripts.
+
+```json
+{
+  "db:build": "node -e \"require('node:fs').rmSync('database/compiled', { recursive: true, force: true })\" && tsc -p database/tsconfig.json",
+  "db:create": "sequelize-cli db:create --config database/config/config.cjs --env development",
+  "db:migrate": "yarn db:build && sequelize-cli db:migrate --config database/config/config.cjs --migrations-path database/compiled/migrations --env development",
+  "db:migrate:status": "yarn db:build && sequelize-cli db:migrate:status --config database/config/config.cjs --migrations-path database/compiled/migrations --env development",
+  "db:migrate:undo": "yarn db:build && sequelize-cli db:migrate:undo --config database/config/config.cjs --migrations-path database/compiled/migrations --env development",
+  "db:seed": "yarn db:build && sequelize-cli db:seed:all --config database/config/config.cjs --seeders-path database/compiled/seeders --env development",
+  "db:seed:undo": "yarn db:build && sequelize-cli db:seed:undo --config database/config/config.cjs --seeders-path database/compiled/seeders --env development",
+  "migration:generate": "sequelize-cli migration:generate --migrations-path database/migrations",
+  "seed:generate": "sequelize-cli seed:generate --seeders-path database/seeders"
+}
+```
+
+The build removes only the generated `database/compiled` folder before compilation, preventing stale migrations from surviving a source rename. Keep source files outside that folder.
+
+## Migrations
+
+Migrations create and change database structure. Run them before seeders:
 
 ```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+yarn migration:generate --name describe-change
+yarn db:migrate
+yarn db:migrate:status
 ```
 
-## Deployment
+The generator creates a JavaScript template. Before execution, rename the new source file from `.js` to `.ts` and convert it to typed exports:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+```typescript
+import type { QueryInterface } from "sequelize";
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+export async function up(queryInterface: QueryInterface): Promise<void> {
+  // Apply the schema change.
+}
+
+export async function down(queryInterface: QueryInterface): Promise<void> {
+  // Reverse the schema change.
+}
+```
+
+Import `DataTypes` from `sequelize` when defining columns. The CLI executes compiled `.js` files, never source `.ts` files. Do not rename or rewrite migrations already applied to a shared database; add a new migration instead.
+
+The intended product table name is `Products`, with a UUID `id`, `name`, nullable image URL `image`, integer `qty`, decimal `price`, and timestamps. Keep the model's `tableName`, migrations, and seeders consistent. PostgreSQL raw SQL must quote the capitalized name: `SELECT COUNT(*) FROM "Products";`.
+
+If `products` was already created, apply a new rename migration rather than editing the original migration. A rename preserves the existing rows.
+
+To undo the most recent migration:
 
 ```bash
-$ yarn install -g @nestjs/mau
-$ mau deploy
+yarn db:migrate:undo
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Review its `down` function first: undoing a table-creation migration drops that table and its data.
 
-## Observability
+## Seeders
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+Seeders insert initial or sample data:
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+```bash
+yarn seed:generate --name seed-products
+# Rename the generated file to .ts and implement typed up/down exports.
+yarn db:seed
+```
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+The product seeder described during setup inserts 1,000 sample products in batches of 100. All batches share one transaction: an error rolls back the entire insertion. It supplies fixed UUIDs, decimal prices as strings, nullable images, and timestamps. Its rollback deletes only those fixed IDs.
 
-## Resources
+With `seederStorage: 'sequelize'`, completed seeders are recorded and skipped on subsequent runs. `db:seed` executes all pending seeders, so inspect pending files before running it. Sample products are for development and testing.
 
-Check out a few resources that may come in handy when working with NestJS:
+To undo a specific completed seeder, pass its compiled filename:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+yarn db:seed:undo --seed 20260912220000-seed-products.js
+```
 
-## Support
+Use the actual filename in your project. A seeder rollback removes data; inspect its `down` function first. Run database operations once from an operator terminal, not independently inside every PM2 worker.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Development and resource generation
 
-## Stay in touch
+```bash
+yarn start:dev
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+To scaffold a new REST resource:
 
-## License
+```bash
+yarn nest generate resource products
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Choose REST API and CRUD entry points. Skip generation if the resource already exists. The generated service contains placeholders; connect it to the Sequelize model to implement database operations. UUID parameters should remain strings rather than being converted to numbers.
+
+## PM2 cluster operation
+
+Build and confirm the output entry file. The commands here use `dist/main.js`; substitute `dist/src/main.js` if that is your actual build output.
+
+```bash
+yarn build
+pm2 start dist/main.js --name experiment-lab -i 3
+pm2 status
+pm2 logs experiment-lab --lines 100
+pm2 save
+```
+
+`-i 3` starts three workers in cluster mode; use `-i 2` for two. Start the compiled Node entry directly. Do not add `--exec-mode`, which was rejected by the installed CLI. Cluster workers share the listening port. See the [PM2 cluster documentation](https://pm2.keymetrics.io/docs/usage/cluster-mode/).
+
+If an old Yarn-based PM2 process already uses this name, stop and remove that specific process before the first direct cluster start:
+
+```bash
+pm2 delete experiment-lab
+```
+
+This interrupts the existing service. Do not delete it during routine updates; use reload instead.
+
+### Routine commands
+
+| Operation                   | Command                               |
+| --------------------------- | ------------------------------------- |
+| Inspect processes           | `pm2 status`                          |
+| Inspect application details | `pm2 describe experiment-lab`         |
+| View logs                   | `pm2 logs experiment-lab --lines 100` |
+| Monitor CPU and memory      | `pm2 monit`                           |
+| Change to two workers       | `pm2 scale experiment-lab 2`          |
+| Reload workers              | `pm2 reload experiment-lab`           |
+| Restart workers             | `pm2 restart experiment-lab`          |
+| Stop application            | `pm2 stop experiment-lab`             |
+| Save current process list   | `pm2 save`                            |
+
+Save the process list after changing the worker count. A cluster reload replaces workers gradually; it can fall back to a restart if graceful replacement fails. Keep in-memory sessions and scheduled jobs in mind when using multiple workers: memory is separate, jobs may run per worker, and each worker has its own database connection pool.
+
+### Apply application updates
+
+After updating the source:
+
+```bash
+yarn install --frozen-lockfile
+yarn build
+yarn db:migrate
+pm2 reload experiment-lab --update-env
+pm2 status
+pm2 logs experiment-lab --lines 100
+```
+
+Check an implemented endpoint after reload. For rolling updates, schema changes must remain compatible with the workers still running the previous version. Run seeders only when explicitly needed.
+
+### Restore after reboot
+
+```bash
+pm2 startup
+```
+
+Follow the platform-specific command PM2 prints, then run `pm2 save`. Saving alone does not install startup integration. See [PM2 startup instructions](https://pm2.keymetrics.io/docs/usage/startup/).
+
+## Troubleshooting
+
+| Error                                         | What to check                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Cannot find `config/config.json`              | Use the explicit `--config database/config/config.cjs` scripts above.                                            |
+| Cannot use import statement outside a module  | The CLI may be loading `database/migrations/*.ts`; execution must target `database/compiled/migrations`.         |
+| `module is not defined in ES module scope`    | Ensure `database/package.json` contains `"type": "commonjs"` and execution uses compiled files.                  |
+| `database/tsconfig.json` does not exist       | Create the separate database compiler file shown above.                                                          |
+| Deprecated `moduleResolution=node10`          | Use `Node16` for both `module` and `moduleResolution` in the database config.                                    |
+| `queryInterface` implicitly has an `any` type | Annotate both migration functions with `queryInterface: QueryInterface`.                                         |
+| Nest controller decorator errors              | Root config must include `src/**/*.ts` and enable both decorator options; restart the VS Code TypeScript server. |
+| Relation `Products` does not exist            | Check migration status and exact capitalization; verify any rename migration ran.                                |
+| Connection refused / authentication failed    | Check PostgreSQL is running and `.env` matches the host, port, database, and credentials.                        |
+| PM2 unknown option `--exec-mode`              | Use `pm2 start dist/main.js --name experiment-lab -i 3`.                                                         |
+
+For migration tracking and seeder storage behavior, see the [Sequelize migration documentation](https://sequelize.org/docs/v6/other-topics/migrations/).
