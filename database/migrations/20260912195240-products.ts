@@ -4,10 +4,11 @@ import type { QueryInterface } from "sequelize";
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface: QueryInterface) {
-    await queryInterface.createTable("products", {
+    await queryInterface.createTable("Products", {
       id: {
-        type: DataTypes.UUID,
+        type: DataTypes.INTEGER,
         primaryKey: true,
+        autoIncrement: true,
         allowNull: false,
       },
       name: {
@@ -39,6 +40,6 @@ module.exports = {
   },
 
   async down(queryInterface: QueryInterface) {
-    await queryInterface.dropTable("products");
+    await queryInterface.dropTable("Products");
   },
 };

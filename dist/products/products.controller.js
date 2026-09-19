@@ -8,25 +8,25 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 import { Controller, Get } from "@nestjs/common";
-import { AppService } from "./app.service.js";
-let AppController = class AppController {
-    appService;
-    constructor(appService) {
-        this.appService = appService;
+import { ProductService } from "./product.service.js";
+let ProductsController = class ProductsController {
+    productService;
+    constructor(productService) {
+        this.productService = productService;
     }
-    getHello() {
-        return this.appService.getHello();
+    getProduct() {
+        return this.productService.getProduct();
     }
 };
 __decorate([
     Get(),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
-    __metadata("design:returntype", String)
-], AppController.prototype, "getHello", null);
-AppController = __decorate([
-    Controller(),
-    __metadata("design:paramtypes", [AppService])
-], AppController);
-export { AppController };
-//# sourceMappingURL=app.controller.js.map
+    __metadata("design:returntype", void 0)
+], ProductsController.prototype, "getProduct", null);
+ProductsController = __decorate([
+    Controller("products"),
+    __metadata("design:paramtypes", [ProductService])
+], ProductsController);
+export { ProductsController };
+//# sourceMappingURL=products.controller.js.map
