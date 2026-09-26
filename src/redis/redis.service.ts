@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { randomUUID } from "crypto";
 import { Redis } from "ioredis";
 
 @Injectable()
@@ -63,6 +64,35 @@ export class RedisService implements OnModuleDestroy {
     try {
       if (!this.isAvailable) return;
       await this.client.del(key);
+    } catch {}
+  }
+
+  async acquireLock(key: string, ttlMs: number): Promise<string | null> {
+    try {
+      if (!this.isAvailable) return null;
+
+      const token = randomUUID();
+
+      const result = await this.client.set(key, token, "PX", ttlMs, "NX");
+      return result === "OK" ? token : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async releaseLock(key: string, token: string): Promise<void> {
+    if (!this.isAvailable) return;
+
+    const script = `
+      if redis.call("GET", KEYS[1]) == ARGV[1] then
+        return redis.call("DEL", KEYS[1])
+      end
+
+      return 0
+    `;
+
+    try {
+      await this.client.eval(script, 1, key, token);
     } catch {}
   }
 
