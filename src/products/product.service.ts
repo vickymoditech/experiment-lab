@@ -30,7 +30,7 @@ export class ProductService {
       const lockToken = await this.redisService.acquireLock(lockKey, 3000);
       if (lockToken) {
         try {
-          this.logger.log(`Acquired lock for product ${getRandomProductId}`);
+          // this.logger.log(`Acquired lock for product ${getRandomProductId}`);
           const product = await this.productModel.findByPk(getRandomProductId, {
             attributes: ["id", "name", "image", "qty", "price"],
             raw: true, // Return plain object instead of Sequelize model instance
@@ -42,7 +42,7 @@ export class ProductService {
             );
           }
 
-          const ttl = 300 + Math.floor(Math.random() * 60);
+          const ttl = 120 + Math.floor(Math.random() * 181);
           await this.redisService.set(cacheKey, JSON.stringify(product), ttl);
 
           return product;
@@ -61,9 +61,9 @@ export class ProductService {
   }
 
   private async waitForCachedProduct(cacheKey: string, productId: number) {
-    this.logger.warn(
-      `Waiting for cached product ${productId} to become available...`,
-    );
+    // this.logger.warn(
+    //   `Waiting for cached product ${productId} to become available.`,
+    // );
     const maxAttempts = 20;
     const delayMs = 25;
 

@@ -15,10 +15,10 @@ import {
 export class Product extends Model<Product> {
   @PrimaryKey
   @Column({
-    type: DataType.UUID,
+    type: DataType.INTEGER,
     allowNull: false,
   })
-  declare id: string;
+  declare id: number;
 
   @Column({
     type: DataType.STRING(255),
