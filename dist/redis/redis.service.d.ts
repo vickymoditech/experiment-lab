@@ -2,6 +2,7 @@ import { OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 export declare class RedisService implements OnModuleDestroy {
     private readonly configService;
+    private readonly logger;
     private readonly client;
     private isAvailable;
     constructor(configService: ConfigService);

@@ -7,11 +7,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { Injectable } from "@nestjs/common";
+var RedisService_1;
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Redis } from "ioredis";
-let RedisService = class RedisService {
+let RedisService = RedisService_1 = class RedisService {
     configService;
+    logger = new Logger(RedisService_1.name);
     client;
     isAvailable = false;
     constructor(configService) {
@@ -23,24 +25,24 @@ let RedisService = class RedisService {
             enableOfflineQueue: false,
             maxRetriesPerRequest: 1,
             retryStrategy: (times) => {
-                return Math.min(times * 500, 5000);
+                return Math.min(times * 500, 30000);
             },
         });
         this.client.on("ready", () => {
             this.isAvailable = true;
-            console.log("Redis client connected successfully.");
+            this.logger.log("Redis client connected successfully.");
         });
         this.client.on("close", () => {
             this.isAvailable = false;
-            console.warn("Redis connection closed.");
+            this.logger.warn("Redis connection closed.");
         });
         this.client.on("end", () => {
             this.isAvailable = false;
-            console.warn("Redis connection ended.");
+            this.logger.warn("Redis connection ended.");
         });
         this.client.on("error", (err) => {
             this.isAvailable = false;
-            console.error("Redis error:", err);
+            this.logger.error("Redis error:", err);
         });
     }
     async get(key) {
@@ -76,7 +78,7 @@ let RedisService = class RedisService {
         await this.client.quit();
     }
 };
-RedisService = __decorate([
+RedisService = RedisService_1 = __decorate([
     Injectable(),
     __metadata("design:paramtypes", [ConfigService])
 ], RedisService);
