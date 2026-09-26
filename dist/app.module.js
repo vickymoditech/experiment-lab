@@ -8,6 +8,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { DatabaseModule } from "./database/database.module.js";
 import { ProductModule } from "./products/product.module.js";
+import { RedisModule } from "./redis/redis.module.js";
 let AppModule = class AppModule {
 };
 AppModule = __decorate([
@@ -18,6 +19,7 @@ AppModule = __decorate([
             }),
             DatabaseModule,
             ProductModule,
+            RedisModule,
         ],
     })
 ], AppModule);
