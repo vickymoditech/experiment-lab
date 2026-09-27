@@ -7,27 +7,59 @@ import {
 import { InjectModel } from "@nestjs/sequelize";
 import { RedisService } from "../redis/redis.service.js";
 import { Product } from "./product.model.js";
+import { ProductBloomService } from "./product-bloom.service.js";
 
 @Injectable()
 export class ProductService {
   private readonly logger: Logger = new Logger(ProductService.name);
   constructor(
     @InjectModel(Product) private readonly productModel: typeof Product,
+    private readonly productBloomService: ProductBloomService,
     private readonly redisService: RedisService,
   ) {}
 
   async getProduct(): Promise<Product> {
     try {
-      const getRandomProductId = Math.floor(Math.random() * 15000) + 1;
+      const getRandomProductId = Math.floor(Math.random() * 20000) + 1;
       const cacheKey = `product:${getRandomProductId}`;
       const lockKey = `lock:${cacheKey}`;
+      const EXPIRATION_TIME_NOT_FOUND = 120; // Cache expiration time in seconds
+      const EXPIRATION_TIME_FOUND = 120 + Math.floor(Math.random() * 181); // Random expiration time between 120 and 300 seconds
+      const EXPIRATION_TIME_LOCK = 3 * 1000; // Lock expiration time in seconds
 
+      // Check if the product is already cached
       const cachedProduct = await this.redisService.get(cacheKey);
+
+      if (cachedProduct === "NOT_FOUND") {
+        throw new NotFoundException(
+          `Product with id ${getRandomProductId} not found`,
+        );
+      }
+
       if (cachedProduct) {
         return JSON.parse(cachedProduct);
       }
 
-      const lockToken = await this.redisService.acquireLock(lockKey, 3000);
+      // Check Bloom filter for potential existence
+      const mightExist =
+        await this.productBloomService.mightExist(getRandomProductId);
+
+      if (!mightExist) {
+        await this.redisService.set(
+          cacheKey,
+          "NOT_FOUND",
+          EXPIRATION_TIME_NOT_FOUND,
+        );
+        throw new NotFoundException(
+          `Product with id ${getRandomProductId} not found`,
+        );
+      }
+
+      // Single flight mechanism to prevent cache stampede
+      const lockToken = await this.redisService.acquireLock(
+        lockKey,
+        EXPIRATION_TIME_LOCK,
+      );
       if (lockToken) {
         try {
           // this.logger.log(`Acquired lock for product ${getRandomProductId}`);
@@ -37,13 +69,21 @@ export class ProductService {
           });
 
           if (!product) {
+            await this.redisService.set(
+              cacheKey,
+              "NOT_FOUND",
+              EXPIRATION_TIME_NOT_FOUND,
+            );
             throw new NotFoundException(
               `Product with id ${getRandomProductId} not found`,
             );
           }
 
-          const ttl = 120 + Math.floor(Math.random() * 181);
-          await this.redisService.set(cacheKey, JSON.stringify(product), ttl);
+          await this.redisService.set(
+            cacheKey,
+            JSON.stringify(product),
+            EXPIRATION_TIME_FOUND,
+          );
 
           return product;
         } finally {
@@ -53,7 +93,7 @@ export class ProductService {
 
       return this.waitForCachedProduct(cacheKey, getRandomProductId);
     } catch (error) {
-      this.logger.error("Error fetching product:", error);
+      // this.logger.error("Error fetching product:", error);
       throw new NotFoundException(
         "An error occurred while fetching the product.",
       );
@@ -71,6 +111,10 @@ export class ProductService {
       await this.delay(delayMs);
 
       const cachedProduct = await this.redisService.get(cacheKey);
+
+      if (cachedProduct === "NOT_FOUND") {
+        throw new NotFoundException(`Product with id ${productId} not found`);
+      }
 
       if (cachedProduct) {
         return JSON.parse(cachedProduct);

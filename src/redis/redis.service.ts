@@ -96,6 +96,72 @@ export class RedisService implements OnModuleDestroy {
     } catch {}
   }
 
+  async bloomReserve(
+    key: string,
+    errorRate: number,
+    capacity: number,
+  ): Promise<boolean> {
+    try {
+      if (!this.isAvailable) return false;
+
+      await this.client.call(
+        "BF.RESERVE",
+        key,
+        String(errorRate),
+        String(capacity),
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.toLowerCase().includes("item exists")) {
+        return true;
+      }
+
+      this.logger.warn(`Bloom reserve failed for '${key}': ${message}`);
+      return false;
+    }
+  }
+
+  async bloomExists(
+    key: string,
+    value: string | number,
+  ): Promise<boolean | null> {
+    try {
+      if (!this.isAvailable) return null;
+
+      const result = await this.client.call("BF.EXISTS", key, String(value));
+      return Number(result) === 1;
+    } catch {
+      return null;
+    }
+  }
+
+  async bloomAdd(key: string, value: string | number): Promise<boolean> {
+    try {
+      if (!this.isAvailable) return false;
+
+      await this.client.call("BF.ADD", key, String(value));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async bloomAddMany(
+    key: string,
+    values: Array<string | number>,
+  ): Promise<boolean> {
+    try {
+      if (!this.isAvailable || values.length === 0) return false;
+
+      await this.client.call("BF.MADD", key, ...values.map(String));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async ping(): Promise<string> {
     return this.client.ping();
   }
